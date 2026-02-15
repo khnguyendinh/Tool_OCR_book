@@ -1,0 +1,64 @@
+<div class="job-list-page animate-fade-in">
+    <div class="page-header">
+        <h1>📋 Danh sách Jobs</h1>
+        <p class="page-desc">Theo dõi trạng thái xử lý OCR — tự động cập nhật mỗi 3 giây</p>
+    </div>
+
+    @if (isLoading) {
+    <div class="loading-state">
+        <span class="spinner"></span>
+        <p>Đang tải dữ liệu...</p>
+    </div>
+    } @else if (error) {
+    <div class="error-state glass-card">
+        <p>⚠️ {{ error }}</p>
+    </div>
+    } @else if (jobs.length === 0) {
+    <div class="empty-state glass-card">
+        <div class="empty-icon">📭</div>
+        <h3>Chưa có job nào</h3>
+        <p>Upload file PDF để bắt đầu xử lý OCR</p>
+        <a routerLink="/upload" class="btn btn-primary">⬆️ Upload PDF</a>
+    </div>
+    } @else {
+    <div class="jobs-grid">
+        @for (job of jobs; track job.id) {
+        <a [routerLink]="['/jobs', job.id]" class="job-card glass-card">
+            <div class="job-header">
+                <div class="job-name">
+                    <span class="file-icon">📄</span>
+                    <span class="file-name">{{ job.originalFileName }}</span>
+                </div>
+                <span class="badge" [ngClass]="getStatusClass(job.status)">
+                    {{ getStatusLabel(job.status) }}
+                </span>
+            </div>
+
+            <div class="job-stats">
+                <div class="stat">
+                    <span class="stat-label">Tổng trang</span>
+                    <span class="stat-value">{{ job.totalPages }}</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Phần</span>
+                    <span class="stat-value">{{ job.completedParts }}/{{ job.totalParts }}</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Tiến độ</span>
+                    <span class="stat-value">{{ job.progressPercent }}%</span>
+                </div>
+            </div>
+
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" [style.width.%]="job.progressPercent"></div>
+            </div>
+
+            <div class="job-footer">
+                <span class="job-date">🕐 {{ formatDate(job.createdAt) }}</span>
+                <span class="view-detail">Xem chi tiết →</span>
+            </div>
+        </a>
+        }
+    </div>
+    }
+</div>

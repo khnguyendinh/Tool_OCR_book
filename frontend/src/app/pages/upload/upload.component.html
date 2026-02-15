@@ -1,0 +1,147 @@
+<div class="upload-page animate-fade-in">
+    <!-- Hero Section -->
+    <div class="hero">
+        <h1 class="hero-title">
+            <span class="gradient-text">OCR Book Processor</span>
+        </h1>
+        <p class="hero-subtitle">
+            Upload file PDF sách scan, chuyển đổi sang văn bản bằng Google Cloud Vision AI
+        </p>
+    </div>
+
+    <!-- Upload Card -->
+    <div class="upload-card glass-card">
+        <!-- Drop Zone -->
+        <div class="drop-zone" [class.drag-over]="isDragOver" [class.has-file]="selectedFile"
+            (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+            (click)="fileInput.click()">
+
+            <input #fileInput type="file" accept=".pdf" (change)="onFileSelected($event)" hidden>
+
+            @if (!selectedFile) {
+            <div class="drop-zone-content">
+                <div class="upload-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                </div>
+                <p class="drop-text">Kéo thả file PDF vào đây</p>
+                <p class="drop-subtext">hoặc click để chọn file</p>
+                <span class="file-type-badge">PDF</span>
+            </div>
+            } @else {
+            <div class="file-info">
+                <div class="file-icon">📄</div>
+                <div class="file-details">
+                    <p class="file-name">{{ selectedFile.name }}</p>
+                    <p class="file-size">{{ formatFileSize(selectedFile.size) }}</p>
+                </div>
+                <button class="remove-btn" (click)="removeFile(); $event.stopPropagation()">✕</button>
+            </div>
+            }
+        </div>
+
+        <!-- Config Section -->
+        <div class="config-section">
+            <div class="config-item">
+                <label class="config-label">
+                    <span class="config-icon">⚙️</span>
+                    Số phần chia (Split Parts)
+                </label>
+                <div class="input-wrapper">
+                    <input type="number" [(ngModel)]="numParts" min="1" max="10000" class="config-input"
+                        [disabled]="isUploading">
+                    <span class="input-hint">parts</span>
+                </div>
+                <p class="config-desc">
+                    Chia file PDF thành nhiều phần nhỏ để xử lý song song qua message queue
+                </p>
+            </div>
+
+            <div class="config-item">
+                <label class="config-label">
+                    <span class="config-icon">📂</span>
+                    Thư mục lưu file split
+                </label>
+                <div class="input-wrapper">
+                    <input type="text" [(ngModel)]="splitDir" class="config-input path-input"
+                        placeholder="Ví dụ: D:\OCR\split-files" [disabled]="isUploading">
+                </div>
+                <p class="config-desc">
+                    Đường dẫn thư mục lưu các file PDF sau khi chia. Để trống sẽ dùng mặc định (./temp/pdf-parts)
+                </p>
+            </div>
+
+            <div class="config-item">
+                <label class="config-label">
+                    <span class="config-icon">💾</span>
+                    Thư mục lưu file kết quả
+                </label>
+                <div class="input-wrapper">
+                    <input type="text" [(ngModel)]="outputDir" class="config-input path-input"
+                        placeholder="Ví dụ: D:\OCR\output" [disabled]="isUploading">
+                </div>
+                <p class="config-desc">
+                    Đường dẫn thư mục lưu file Word (.docx) cuối cùng. Để trống sẽ dùng mặc định (./output)
+                </p>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        @if (errorMessage) {
+        <div class="error-message">
+            <span>⚠️</span> {{ errorMessage }}
+        </div>
+        }
+
+        <!-- Upload Progress -->
+        @if (isUploading) {
+        <div class="upload-progress">
+            <div class="progress-header">
+                <span class="spinner"></span>
+                <span>Đang upload... {{ uploadProgress }}%</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" [style.width.%]="uploadProgress"></div>
+            </div>
+        </div>
+        }
+
+        <!-- Upload Button -->
+        <button class="btn btn-primary upload-btn" (click)="upload()" [disabled]="!selectedFile || isUploading">
+            @if (isUploading) {
+            <span class="spinner"></span>
+            Đang xử lý...
+            } @else {
+            🚀 Bắt đầu OCR
+            }
+        </button>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="info-grid">
+        <div class="info-card glass-card">
+            <div class="info-icon">📑</div>
+            <h3>Split PDF</h3>
+            <p>Chia file PDF thành nhiều phần nhỏ để xử lý hiệu quả</p>
+        </div>
+        <div class="info-card glass-card">
+            <div class="info-icon">🔄</div>
+            <h3>Message Queue</h3>
+            <p>Đẩy các phần vào RabbitMQ để xử lý tuần tự, ổn định</p>
+        </div>
+        <div class="info-card glass-card">
+            <div class="info-icon">🤖</div>
+            <h3>Google OCR</h3>
+            <p>Sử dụng Google Cloud Vision AI để nhận dạng văn bản</p>
+        </div>
+        <div class="info-card glass-card">
+            <div class="info-icon">📝</div>
+            <h3>Export Word</h3>
+            <p>Ghép kết quả thành file Word (.docx) hoàn chỉnh</p>
+        </div>
+    </div>
+</div>

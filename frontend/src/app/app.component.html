@@ -1,0 +1,27 @@
+<div class="app-container">
+  <!-- Header / Navbar -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <span class="logo-icon">📖</span>
+      <span class="logo-text">OCR Book Processor</span>
+    </div>
+    <div class="navbar-links">
+      <a routerLink="/upload" routerLinkActive="active" class="nav-link">
+        <span class="nav-icon">⬆️</span> Upload
+      </a>
+      <a routerLink="/jobs" routerLinkActive="active" class="nav-link">
+        <span class="nav-icon">📋</span> Jobs
+      </a>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <router-outlet></router-outlet>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>OCR Book Processor &copy; 2026 — Powered by Google Cloud Vision</p>
+  </footer>
+</div>

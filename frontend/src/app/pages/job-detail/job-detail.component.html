@@ -1,0 +1,118 @@
+<div class="job-detail-page animate-fade-in">
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <a routerLink="/jobs" class="breadcrumb-link">📋 Jobs</a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">Chi tiết</span>
+    </div>
+
+    @if (isLoading) {
+    <div class="loading-state">
+        <span class="spinner"></span>
+        <p>Đang tải...</p>
+    </div>
+    } @else if (error) {
+    <div class="error-state glass-card">
+        <p>⚠️ {{ error }}</p>
+    </div>
+    } @else if (job) {
+    <!-- Job Header Card -->
+    <div class="header-card glass-card">
+        <div class="header-top">
+            <div class="header-info">
+                <h1 class="job-title">📄 {{ job.originalFileName }}</h1>
+                <span class="badge" [ngClass]="getStatusClass(job.status)">
+                    {{ getStatusLabel(job.status) }}
+                </span>
+            </div>
+
+            @if (job.status === 'COMPLETED') {
+            <button class="btn btn-success download-btn" (click)="downloadResult()" [disabled]="isDownloading">
+                @if (isDownloading) {
+                <span class="spinner"></span> Đang tải...
+                } @else {
+                📥 Tải file Word
+                }
+            </button>
+            }
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row">
+            <div class="stat-box">
+                <span class="stat-number">{{ job.totalPages }}</span>
+                <span class="stat-label">Tổng trang</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-number">{{ job.totalParts }}</span>
+                <span class="stat-label">Tổng phần</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-number accent-green">{{ job.completedParts }}</span>
+                <span class="stat-label">Hoàn thành</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-number accent-purple">{{ job.progressPercent }}%</span>
+                <span class="stat-label">Tiến độ</span>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-section">
+            <div class="progress-bar-container large">
+                <div class="progress-bar-fill" [style.width.%]="job.progressPercent"></div>
+            </div>
+        </div>
+
+        <div class="meta-row">
+            <span>🕐 Tạo lúc: {{ formatDate(job.createdAt) }}</span>
+            @if (job.updatedAt) {
+            <span>🔄 Cập nhật: {{ formatDate(job.updatedAt) }}</span>
+            }
+        </div>
+    </div>
+
+    <!-- Tasks Table -->
+    @if (job.tasks && job.tasks.length > 0) {
+    <div class="tasks-section">
+        <h2 class="section-title">📊 Chi tiết từng phần ({{ job.tasks.length }} parts)</h2>
+        <div class="tasks-table-wrapper glass-card">
+            <table class="tasks-table">
+                <thead>
+                    <tr>
+                        <th>Part</th>
+                        <th>Trang</th>
+                        <th>Trạng thái</th>
+                        <th>Lỗi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (task of job.tasks; track task.id) {
+                    <tr [class.completed]="task.status === 'COMPLETED'" [class.failed]="task.status === 'FAILED'"
+                        [class.processing]="task.status === 'PROCESSING'">
+                        <td class="part-number">#{{ task.partNumber }}</td>
+                        <td class="page-range">{{ task.startPage }} - {{ task.endPage }}</td>
+                        <td>
+                            <span class="badge badge-sm" [ngClass]="getStatusClass(task.status)">
+                                {{ getTaskStatusIcon(task.status) }} {{ task.status }}
+                            </span>
+                        </td>
+                        <td class="error-cell">
+                            @if (task.errorMessage) {
+                            <span class="error-text" [title]="task.errorMessage">
+                                {{ task.errorMessage.length > 50 ? task.errorMessage.substring(0, 50) + '...' :
+                                task.errorMessage }}
+                            </span>
+                            } @else {
+                            <span class="no-error">—</span>
+                            }
+                        </td>
+                    </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+    }
+    }
+</div>

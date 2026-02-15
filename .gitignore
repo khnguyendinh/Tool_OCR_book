@@ -1,0 +1,30 @@
+# === IDE ===
+.vscode/
+.idea/
+*.iml
+
+# === Java / Maven ===
+target/
+*.class
+*.jar
+*.war
+
+# === Node / Angular ===
+node_modules/
+dist/
+.angular/
+
+# === OS ===
+Thumbs.db
+.DS_Store
+
+# === Backend data / temp / output ===
+backend/data/
+backend/temp/
+backend/output/
+*.mv.db
+*.trace.db
+
+# === Credentials / Secrets ===
+# Specifically ignore Google Cloud service account key
+backend/src/main/resources/augmented-tract-487403-v1-790987ca2ed1.json
