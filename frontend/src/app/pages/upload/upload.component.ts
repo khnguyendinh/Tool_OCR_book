@@ -13,7 +13,10 @@ import { OcrService } from '../../services/ocr.service';
     styleUrl: './upload.component.css'
 })
 export class UploadComponent implements OnInit {
-    selectedFile: File | null = null;
+    selectedFiles: File[] = [];
+    currentIndex = 0;
+    failedFiles: string[] = [];
+    createdJobIds: string[] = [];
     numParts = 100;
     splitDir = '';
     outputDir = '';
@@ -57,29 +60,46 @@ export class UploadComponent implements OnInit {
 
         const files = event.dataTransfer?.files;
         if (files && files.length > 0) {
-            this.selectFile(files[0]);
+            this.addFiles(Array.from(files));
         }
     }
 
     onFileSelected(event: Event) {
         const input = event.target as HTMLInputElement;
         if (input.files && input.files.length > 0) {
-            this.selectFile(input.files[0]);
+            this.addFiles(Array.from(input.files));
         }
+        // Reset để chọn lại cùng file vẫn kích hoạt sự kiện change
+        input.value = '';
     }
 
-    selectFile(file: File) {
-        if (file.type !== 'application/pdf') {
-            this.errorMessage = 'Vui lòng chọn file PDF!';
-            return;
+    addFiles(files: File[]) {
+        const pdfs = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+        const skipped = files.length - pdfs.length;
+
+        // Bỏ qua file trùng (cùng tên + dung lượng)
+        for (const file of pdfs) {
+            const exists = this.selectedFiles.some(f => f.name === file.name && f.size === file.size);
+            if (!exists) {
+                this.selectedFiles.push(file);
+            }
         }
-        this.selectedFile = file;
+
+        this.errorMessage = skipped > 0 ? `Đã bỏ qua ${skipped} file không phải PDF!` : '';
+    }
+
+    removeFile(index: number) {
+        this.selectedFiles.splice(index, 1);
         this.errorMessage = '';
     }
 
-    removeFile() {
-        this.selectedFile = null;
+    clearFiles() {
+        this.selectedFiles = [];
         this.errorMessage = '';
+    }
+
+    get totalSize(): number {
+        return this.selectedFiles.reduce((sum, f) => sum + f.size, 0);
     }
 
     formatFileSize(bytes: number): string {
@@ -91,35 +111,67 @@ export class UploadComponent implements OnInit {
     }
 
     upload() {
-        if (!this.selectedFile) return;
+        if (this.selectedFiles.length === 0) return;
         if (this.numParts < 1 || this.numParts > 10000) {
             this.errorMessage = 'Số phần phải từ 1 đến 10000!';
             return;
         }
 
         this.isUploading = true;
-        this.uploadProgress = 0;
         this.errorMessage = '';
+        this.currentIndex = 0;
+        this.failedFiles = [];
+        this.createdJobIds = [];
+        this.uploadNext();
+    }
 
-        this.ocrService.uploadPdf(this.selectedFile, this.numParts, this.splitDir, this.outputDir).subscribe({
+    /** Upload tuần tự từng file, mỗi file tạo một job riêng. */
+    private uploadNext() {
+        if (this.currentIndex >= this.selectedFiles.length) {
+            this.finishUpload();
+            return;
+        }
+
+        const file = this.selectedFiles[this.currentIndex];
+        this.uploadProgress = 0;
+
+        this.ocrService.uploadPdf(file, this.numParts, this.splitDir, this.outputDir).subscribe({
             next: (event) => {
                 if (event.type === HttpEventType.UploadProgress) {
                     this.uploadProgress = event.total
                         ? Math.round(100 * event.loaded / event.total)
                         : 0;
                 } else if (event.type === HttpEventType.Response) {
-                    this.isUploading = false;
-                    const job = event.body;
-                    if (job) {
-                        this.router.navigate(['/jobs', job.id]);
+                    if (event.body) {
+                        this.createdJobIds.push(event.body.id);
                     }
+                    this.currentIndex++;
+                    this.uploadNext();
                 }
             },
             error: (err) => {
-                this.isUploading = false;
-                this.errorMessage = 'Upload thất bại! Vui lòng kiểm tra kết nối server.';
-                console.error('Upload error:', err);
+                console.error('Upload error:', file.name, err);
+                this.failedFiles.push(file.name);
+                this.currentIndex++;
+                this.uploadNext();
             }
         });
+    }
+
+    private finishUpload() {
+        this.isUploading = false;
+
+        if (this.failedFiles.length > 0) {
+            // Giữ lại các file lỗi để người dùng thử lại
+            this.selectedFiles = this.selectedFiles.filter(f => this.failedFiles.includes(f.name));
+            this.errorMessage = `Upload thất bại ${this.failedFiles.length} file: ${this.failedFiles.join(', ')}. Vui lòng kiểm tra kết nối server.`;
+            return;
+        }
+
+        if (this.createdJobIds.length === 1) {
+            this.router.navigate(['/jobs', this.createdJobIds[0]]);
+        } else {
+            this.router.navigate(['/jobs']);
+        }
     }
 }

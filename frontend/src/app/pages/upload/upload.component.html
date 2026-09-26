@@ -5,20 +5,20 @@
             <span class="gradient-text">OCR Book Processor</span>
         </h1>
         <p class="hero-subtitle">
-            Upload file PDF sách scan, chuyển đổi sang văn bản bằng Google Cloud Vision AI
+            Upload một hoặc nhiều file PDF sách scan, chuyển đổi sang văn bản bằng Google Cloud Vision AI
         </p>
     </div>
 
     <!-- Upload Card -->
     <div class="upload-card glass-card">
         <!-- Drop Zone -->
-        <div class="drop-zone" [class.drag-over]="isDragOver" [class.has-file]="selectedFile"
+        <div class="drop-zone" [class.drag-over]="isDragOver" [class.has-file]="selectedFiles.length > 0"
             (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
             (click)="fileInput.click()">
 
-            <input #fileInput type="file" accept=".pdf" (change)="onFileSelected($event)" hidden>
+            <input #fileInput type="file" accept=".pdf" multiple (change)="onFileSelected($event)" hidden>
 
-            @if (!selectedFile) {
+            @if (selectedFiles.length === 0) {
             <div class="drop-zone-content">
                 <div class="upload-icon">
                     <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -28,19 +28,37 @@
                         <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
                 </div>
-                <p class="drop-text">Kéo thả file PDF vào đây</p>
-                <p class="drop-subtext">hoặc click để chọn file</p>
+                <p class="drop-text">Kéo thả một hoặc nhiều file PDF vào đây</p>
+                <p class="drop-subtext">hoặc click để chọn file (chọn được nhiều file)</p>
                 <span class="file-type-badge">PDF</span>
             </div>
             } @else {
-            <div class="file-info">
-                <div class="file-icon">📄</div>
-                <div class="file-details">
-                    <p class="file-name">{{ selectedFile.name }}</p>
-                    <p class="file-size">{{ formatFileSize(selectedFile.size) }}</p>
-                </div>
-                <button class="remove-btn" (click)="removeFile(); $event.stopPropagation()">✕</button>
+            <div class="file-list-header">
+                <span>📚 {{ selectedFiles.length }} file · {{ formatFileSize(totalSize) }}</span>
+                <span class="add-more">+ Thêm file</span>
             </div>
+            <div class="file-list">
+                @for (file of selectedFiles; track file.name + file.size; let i = $index) {
+                <div class="file-info" [class.done]="isUploading && i < currentIndex"
+                    [class.active]="isUploading && i === currentIndex">
+                    <div class="file-icon">📄</div>
+                    <div class="file-details">
+                        <p class="file-name">{{ file.name }}</p>
+                        <p class="file-size">{{ formatFileSize(file.size) }}</p>
+                    </div>
+                    @if (isUploading && i < currentIndex) {
+                    <span class="file-status">{{ failedFiles.includes(file.name) ? '❌' : '✅' }}</span>
+                    } @else if (isUploading && i === currentIndex) {
+                    <span class="spinner"></span>
+                    } @else if (!isUploading) {
+                    <button class="remove-btn" (click)="removeFile(i); $event.stopPropagation()">✕</button>
+                    }
+                </div>
+                }
+            </div>
+            @if (!isUploading && selectedFiles.length > 1) {
+            <button class="clear-btn" (click)="clearFiles(); $event.stopPropagation()">Xoá tất cả</button>
+            }
             }
         </div>
 
@@ -102,7 +120,7 @@
         <div class="upload-progress">
             <div class="progress-header">
                 <span class="spinner"></span>
-                <span>Đang upload... {{ uploadProgress }}%</span>
+                <span>Đang upload file {{ currentIndex + 1 }}/{{ selectedFiles.length }}... {{ uploadProgress }}%</span>
             </div>
             <div class="progress-bar-container">
                 <div class="progress-bar-fill" [style.width.%]="uploadProgress"></div>
@@ -111,12 +129,12 @@
         }
 
         <!-- Upload Button -->
-        <button class="btn btn-primary upload-btn" (click)="upload()" [disabled]="!selectedFile || isUploading">
+        <button class="btn btn-primary upload-btn" (click)="upload()" [disabled]="selectedFiles.length === 0 || isUploading">
             @if (isUploading) {
             <span class="spinner"></span>
             Đang xử lý...
             } @else {
-            🚀 Bắt đầu OCR
+            🚀 Bắt đầu OCR{{ selectedFiles.length > 1 ? ' (' + selectedFiles.length + ' file)' : '' }}
             }
         </button>
     </div>

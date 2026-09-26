@@ -143,7 +143,7 @@ public class OcrJobService {
             try {
                 generateOutput(job.getId());
             } catch (IOException e) {
-                log.error("Failed to generate Word document for job {}: {}", job.getId(), e.getMessage());
+                log.error("Failed to generate Word document for job {}: {}", job.getId(), e.toString());
             }
         }
 
@@ -174,7 +174,18 @@ public class OcrJobService {
         String outDir = (job.getOutputDir() != null && !job.getOutputDir().isBlank())
                 ? job.getOutputDir()
                 : defaultOutputDir;
-        String outputPath = wordGeneratorService.generateWordDocument(textParts, job.getOriginalFileName(), outDir);
+        String outputPath;
+        try {
+            outputPath = wordGeneratorService.generateWordDocument(textParts, job.getOriginalFileName(), outDir);
+        } catch (IOException e) {
+            if (outDir.equals(defaultOutputDir)) {
+                throw e;
+            }
+            // Thư mục người dùng chọn không ghi được (vd: Windows Controlled Folder Access chặn Documents)
+            // → lưu vào thư mục mặc định để vẫn tải về được
+            log.warn("Cannot write to output dir {} ({}), falling back to {}", outDir, e.toString(), defaultOutputDir);
+            outputPath = wordGeneratorService.generateWordDocument(textParts, job.getOriginalFileName(), defaultOutputDir);
+        }
         job.setOutputFilePath(outputPath);
         jobRepository.save(job);
 
@@ -203,10 +214,15 @@ public class OcrJobService {
      */
     public byte[] getOutputBytes(String jobId) throws IOException {
         OcrJob job = jobRepository.findById(jobId).orElseThrow();
-        if (job.getStatus() != OcrJob.JobStatus.COMPLETED || job.getOutputFilePath() == null) {
+        if (job.getStatus() != OcrJob.JobStatus.COMPLETED) {
             throw new IllegalStateException("Job is not completed yet");
         }
-        return java.nio.file.Files.readAllBytes(java.nio.file.Path.of(job.getOutputFilePath()));
+        String outputFilePath = job.getOutputFilePath();
+        if (outputFilePath == null || !java.nio.file.Files.exists(java.nio.file.Path.of(outputFilePath))) {
+            // Lần tạo file Word trước bị lỗi hoặc file đã bị xoá → tạo lại từ kết quả OCR đã lưu
+            outputFilePath = generateOutput(jobId);
+        }
+        return java.nio.file.Files.readAllBytes(java.nio.file.Path.of(outputFilePath));
     }
 
     /**
