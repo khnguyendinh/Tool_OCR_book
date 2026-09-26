@@ -38,8 +38,7 @@ spring:
     listener:
       simple:
         prefetch: 1
-        concurrency: 1
-        max-concurrency: 1
+        # Số luồng song song cấu hình ở ocr.concurrency (RabbitMQConfig ghi đè phần listener này)
         retry:
           enabled: true
           max-attempts: 3
@@ -48,6 +47,9 @@ spring:
 # OCR Configuration
 ocr:
   split-parts: 100
+  # Số phần OCR chạy song song. Không làm tăng chi phí (tính theo trang/token),
+  # chỉ tăng tốc; quá cao có thể gặp giới hạn 429 của Google (code tự thử lại)
+  concurrency: 20
   temp-dir: ./temp/pdf-parts
   output-dir: ./output
   # Để trống: tự tìm %LOCALAPPDATA%\Pandoc\pandoc.exe rồi đến "pandoc" trong PATH
