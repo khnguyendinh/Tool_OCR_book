@@ -1,6 +1,8 @@
 package com.ocrbook.messaging;
 
 import com.ocrbook.config.RabbitMQConfig;
+import com.ocrbook.model.OcrJob;
+import com.ocrbook.service.GeminiOcrService;
 import com.ocrbook.service.OcrJobService;
 import com.ocrbook.service.OcrService;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component;
 public class OcrTaskConsumer {
 
     private final OcrService ocrService;
+    private final GeminiOcrService geminiOcrService;
     private final OcrJobService ocrJobService;
 
     /**
@@ -29,7 +32,9 @@ public class OcrTaskConsumer {
             long startTime = System.currentTimeMillis();
 
             // Perform OCR on the PDF part
-            String extractedText = ocrService.performOcr(message.getPdfFilePath());
+            String extractedText = message.getOcrMode() == OcrJob.OcrMode.GEMINI
+                    ? geminiOcrService.performOcr(message.getPdfFilePath())
+                    : ocrService.performOcr(message.getPdfFilePath());
 
             // Update task with result
             ocrJobService.completeTask(message.getTaskId(), extractedText);

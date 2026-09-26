@@ -50,3 +50,11 @@ ocr:
   split-parts: 100
   temp-dir: ./temp/pdf-parts
   output-dir: ./output
+  # Để trống: tự tìm %LOCALAPPDATA%\Pandoc\pandoc.exe rồi đến "pandoc" trong PATH
+  pandoc-path:
+  gemini:
+    model: gemini-3.8-flash
+    location: global
+    # Để trống: lấy project_id từ file key GOOGLE_APPLICATION_CREDENTIALS
+    project:
+    dpi: 200

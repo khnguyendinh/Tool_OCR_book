@@ -22,6 +22,7 @@ public class JobResponse {
     private int totalParts;
     private int completedParts;
     private String status;
+    private String ocrMode;
     private double progressPercent;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -39,6 +40,7 @@ public class JobResponse {
                 .totalParts(job.getTotalParts())
                 .completedParts(job.getCompletedParts())
                 .status(job.getStatus().name())
+                .ocrMode(job.getEffectiveOcrMode().name())
                 .progressPercent(Math.round(progress * 100.0) / 100.0)
                 .createdAt(job.getCreatedAt())
                 .updatedAt(job.getUpdatedAt())

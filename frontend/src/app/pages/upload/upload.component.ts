@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpEventType } from '@angular/common/http';
-import { OcrService } from '../../services/ocr.service';
+import { OcrMode, OcrService } from '../../services/ocr.service';
 
 @Component({
     selector: 'app-upload',
@@ -14,6 +14,7 @@ import { OcrService } from '../../services/ocr.service';
 })
 export class UploadComponent implements OnInit {
     selectedFiles: File[] = [];
+    ocrMode: OcrMode = 'GEMINI';
     currentIndex = 0;
     failedFiles: string[] = [];
     createdJobIds: string[] = [];
@@ -135,7 +136,7 @@ export class UploadComponent implements OnInit {
         const file = this.selectedFiles[this.currentIndex];
         this.uploadProgress = 0;
 
-        this.ocrService.uploadPdf(file, this.numParts, this.splitDir, this.outputDir).subscribe({
+        this.ocrService.uploadPdf(file, this.numParts, this.splitDir, this.outputDir, this.ocrMode).subscribe({
             next: (event) => {
                 if (event.type === HttpEventType.UploadProgress) {
                     this.uploadProgress = event.total

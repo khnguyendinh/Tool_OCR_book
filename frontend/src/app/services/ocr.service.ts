@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpEvent, HttpRequest } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+export type OcrMode = 'VISION' | 'GEMINI';
+
 export interface OcrJob {
     id: string;
     originalFileName: string;
@@ -9,6 +11,7 @@ export interface OcrJob {
     totalParts: number;
     completedParts: number;
     status: string;
+    ocrMode: OcrMode;
     progressPercent: number;
     createdAt: string;
     updatedAt: string;
@@ -40,10 +43,12 @@ export class OcrService {
 
     constructor(private http: HttpClient) { }
 
-    uploadPdf(file: File, numParts: number, splitDir: string, outputDir: string): Observable<HttpEvent<OcrJob>> {
+    uploadPdf(file: File, numParts: number, splitDir: string, outputDir: string,
+        ocrMode: OcrMode): Observable<HttpEvent<OcrJob>> {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('numParts', numParts.toString());
+        formData.append('ocrMode', ocrMode);
         if (splitDir) {
             formData.append('splitDir', splitDir);
         }

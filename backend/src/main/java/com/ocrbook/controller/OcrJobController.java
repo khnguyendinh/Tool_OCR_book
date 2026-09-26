@@ -32,7 +32,8 @@ public class OcrJobController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "numParts", required = false) Integer numParts,
             @RequestParam(value = "splitDir", required = false) String splitDir,
-            @RequestParam(value = "outputDir", required = false) String outputDir) {
+            @RequestParam(value = "outputDir", required = false) String outputDir,
+            @RequestParam(value = "ocrMode", required = false) OcrJob.OcrMode ocrMode) {
         try {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().build();
@@ -43,7 +44,7 @@ public class OcrJobController {
                 return ResponseEntity.badRequest().build();
             }
 
-            OcrJob job = ocrJobService.startJob(file, numParts, splitDir, outputDir);
+            OcrJob job = ocrJobService.startJob(file, numParts, splitDir, outputDir, ocrMode);
             return ResponseEntity.ok(JobResponse.fromEntity(job));
 
         } catch (Exception e) {

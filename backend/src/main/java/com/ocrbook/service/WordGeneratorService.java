@@ -12,10 +12,13 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -23,6 +26,9 @@ public class WordGeneratorService {
 
     @Value("${ocr.output-dir:./output}")
     private String outputDir;
+
+    @Value("${ocr.pandoc-path:}")
+    private String pandocPath;
 
     @Autowired
     private OcrService ocrService;
@@ -77,6 +83,69 @@ public class WordGeneratorService {
 
         log.info("Generated formatted Word document: {}", filePath);
         return filePath.toString();
+    }
+
+    /**
+     * Ghép các phần Markdown (+ LaTeX) do Gemini trả về rồi dùng pandoc chuyển sang .docx.
+     * Công thức $...$ được pandoc chuyển thành equation gốc của Word (OMML).
+     */
+    public String generateWordFromMarkdown(List<String> markdownParts, String fileName, String customOutputDir)
+            throws IOException {
+        String resolvedDir = (customOutputDir != null && !customOutputDir.isBlank()) ? customOutputDir : outputDir;
+        Path outputPath = Paths.get(resolvedDir);
+        Files.createDirectories(outputPath);
+
+        String baseName = fileName.replaceAll("\\.[^.]+$", "");
+        Path filePath = outputPath.resolve(baseName + "_ocr_result.docx").toAbsolutePath();
+
+        String markdown = markdownParts.stream()
+                .filter(p -> p != null && !p.isBlank())
+                .collect(Collectors.joining("\n\n"));
+
+        Path mdFile = Files.createTempFile("ocr-", ".md");
+        Path pandocLog = Files.createTempFile("pandoc-", ".log");
+        try {
+            Files.writeString(mdFile, markdown, StandardCharsets.UTF_8);
+
+            // -fancy_lists: giữ nguyên nhãn "a)", "b)"... là chữ, không biến thành danh sách tự đánh số
+            Process process = new ProcessBuilder(resolvePandoc(), mdFile.toString(),
+                    "-f", "markdown-fancy_lists", "-o", filePath.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(pandocLog.toFile())
+                    .start();
+            if (!process.waitFor(5, TimeUnit.MINUTES)) {
+                process.destroyForcibly();
+                throw new IOException("pandoc timeout");
+            }
+            if (process.exitValue() != 0) {
+                throw new IOException("pandoc exit " + process.exitValue() + ": "
+                        + Files.readString(pandocLog, StandardCharsets.UTF_8).strip());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("pandoc interrupted", e);
+        } finally {
+            Files.deleteIfExists(mdFile);
+            Files.deleteIfExists(pandocLog);
+        }
+
+        log.info("Generated Word document via pandoc: {}", filePath);
+        return filePath.toString();
+    }
+
+    /** Lấy đường dẫn pandoc: cấu hình → nơi winget cài mặc định → PATH. */
+    private String resolvePandoc() {
+        if (pandocPath != null && !pandocPath.isBlank()) {
+            return pandocPath;
+        }
+        String localAppData = System.getenv("LOCALAPPDATA");
+        if (localAppData != null) {
+            Path winget = Paths.get(localAppData, "Pandoc", "pandoc.exe");
+            if (Files.exists(winget)) {
+                return winget.toString();
+            }
+        }
+        return "pandoc";
     }
 
     /**

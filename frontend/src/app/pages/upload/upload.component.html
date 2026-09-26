@@ -66,6 +66,25 @@
         <div class="config-section">
             <div class="config-item">
                 <label class="config-label">
+                    <span class="config-icon">🧠</span>
+                    Chế độ OCR
+                </label>
+                <div class="mode-options">
+                    <label class="mode-option" [class.selected]="ocrMode === 'GEMINI'">
+                        <input type="radio" name="ocrMode" value="GEMINI" [(ngModel)]="ocrMode" [disabled]="isUploading">
+                        <span class="mode-title">📐 Tài liệu toán / công thức</span>
+                        <span class="mode-desc">Gemini AI — giữ phân số, công thức dạng equation Word</span>
+                    </label>
+                    <label class="mode-option" [class.selected]="ocrMode === 'VISION'">
+                        <input type="radio" name="ocrMode" value="VISION" [(ngModel)]="ocrMode" [disabled]="isUploading">
+                        <span class="mode-title">📖 Sách chữ thông thường</span>
+                        <span class="mode-desc">Google Cloud Vision — nhanh, rẻ, không hiểu công thức</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="config-item">
+                <label class="config-label">
                     <span class="config-icon">⚙️</span>
                     Số phần chia (Split Parts)
                 </label>

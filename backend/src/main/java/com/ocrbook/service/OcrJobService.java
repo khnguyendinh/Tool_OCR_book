@@ -43,7 +43,8 @@ public class OcrJobService {
      * Start a new OCR job: upload PDF → split → queue tasks.
      */
     @Transactional
-    public OcrJob startJob(MultipartFile file, Integer numParts, String splitDir, String outputDir) throws IOException {
+    public OcrJob startJob(MultipartFile file, Integer numParts, String splitDir, String outputDir,
+            OcrJob.OcrMode ocrMode) throws IOException {
         int parts = numParts != null ? numParts : defaultSplitParts;
         String resolvedSplitDir = (splitDir != null && !splitDir.isBlank()) ? splitDir : defaultSplitDir;
         String resolvedOutputDir = (outputDir != null && !outputDir.isBlank()) ? outputDir : defaultOutputDir;
@@ -61,6 +62,7 @@ public class OcrJobService {
                 .status(OcrJob.JobStatus.SPLITTING)
                 .splitDir(resolvedSplitDir)
                 .outputDir(resolvedOutputDir)
+                .ocrMode(ocrMode != null ? ocrMode : OcrJob.OcrMode.VISION)
                 .build();
         job = jobRepository.save(job);
 
@@ -96,7 +98,7 @@ public class OcrJobService {
 
                 // Send message to queue
                 OcrTaskMessage message = new OcrTaskMessage(
-                        jobId, task.getId(), result.partNumber(), result.filePath());
+                        jobId, task.getId(), result.partNumber(), result.filePath(), job.getEffectiveOcrMode());
                 ocrTaskProducer.sendOcrTask(message);
             }
 
@@ -122,12 +124,16 @@ public class OcrJobService {
     @Transactional
     public void completeTask(String taskId, String extractedText) {
         OcrTask task = taskRepository.findById(taskId).orElseThrow();
+
+        // Khoá dòng job để các consumer chạy song song cập nhật tiến độ lần lượt;
+        // nếu không, nhiều task xong cùng lúc sẽ đếm thiếu và job kẹt ở PROCESSING
+        OcrJob job = jobRepository.findByIdForUpdate(task.getJob().getId()).orElseThrow();
+
         task.setStatus(OcrTask.TaskStatus.COMPLETED);
         task.setExtractedText(extractedText);
-        taskRepository.save(task);
+        taskRepository.saveAndFlush(task);
 
         // Update job progress
-        OcrJob job = task.getJob();
         long completed = taskRepository.countByJobIdAndStatus(job.getId(), OcrTask.TaskStatus.COMPLETED);
         job.setCompletedParts((int) completed);
 
@@ -176,7 +182,7 @@ public class OcrJobService {
                 : defaultOutputDir;
         String outputPath;
         try {
-            outputPath = wordGeneratorService.generateWordDocument(textParts, job.getOriginalFileName(), outDir);
+            outputPath = generateWord(job, textParts, outDir);
         } catch (IOException e) {
             if (outDir.equals(defaultOutputDir)) {
                 throw e;
@@ -184,12 +190,19 @@ public class OcrJobService {
             // Thư mục người dùng chọn không ghi được (vd: Windows Controlled Folder Access chặn Documents)
             // → lưu vào thư mục mặc định để vẫn tải về được
             log.warn("Cannot write to output dir {} ({}), falling back to {}", outDir, e.toString(), defaultOutputDir);
-            outputPath = wordGeneratorService.generateWordDocument(textParts, job.getOriginalFileName(), defaultOutputDir);
+            outputPath = generateWord(job, textParts, defaultOutputDir);
         }
         job.setOutputFilePath(outputPath);
         jobRepository.save(job);
 
         return outputPath;
+    }
+
+    private String generateWord(OcrJob job, List<String> textParts, String outDir) throws IOException {
+        if (job.getEffectiveOcrMode() == OcrJob.OcrMode.GEMINI) {
+            return wordGeneratorService.generateWordFromMarkdown(textParts, job.getOriginalFileName(), outDir);
+        }
+        return wordGeneratorService.generateWordDocument(textParts, job.getOriginalFileName(), outDir);
     }
 
     /**

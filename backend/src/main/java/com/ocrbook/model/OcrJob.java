@@ -36,6 +36,10 @@ public class OcrJob {
     @Column(nullable = false)
     private JobStatus status;
 
+    /** Chế độ OCR; null (job cũ) được coi là VISION. */
+    @Enumerated(EnumType.STRING)
+    private OcrMode ocrMode;
+
     private String outputFilePath;
 
     private String splitDir;
@@ -69,5 +73,16 @@ public class OcrJob {
 
     public enum JobStatus {
         SPLITTING, QUEUED, PROCESSING, COMPLETED, FAILED
+    }
+
+    public enum OcrMode {
+        /** Google Cloud Vision — sách chữ thông thường */
+        VISION,
+        /** Gemini (Vertex AI) + pandoc — tài liệu có công thức toán */
+        GEMINI
+    }
+
+    public OcrMode getEffectiveOcrMode() {
+        return ocrMode != null ? ocrMode : OcrMode.VISION;
     }
 }
