@@ -28,6 +28,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * OCR bằng Gemini (Vertex AI): gửi ảnh từng trang, nhận về Markdown + LaTeX.
@@ -42,15 +45,26 @@ public class GeminiOcrService {
 
             Quy tắc:
             - Chép đúng từng chữ, từng số, đúng thứ tự đọc từ trên xuống. KHÔNG giải bài, KHÔNG sửa lỗi chính tả, KHÔNG thêm hay bớt nội dung, KHÔNG bình luận.
-            - Mọi biểu thức toán (phân số, hỗn số, lũy thừa, căn, phép tính có phân số...) viết bằng LaTeX: inline dùng $...$, công thức đứng riêng một dòng dùng $$...$$. Ví dụ phân số: $\\frac{5}{7}$, hỗn số: $2\\frac{1}{3}$.
+            - Mọi biểu thức toán (phân số, hỗn số, lũy thừa, căn, phép tính có phân số...) viết bằng LaTeX: inline dùng $...$, công thức đứng riêng một dòng dùng $$...$$. Ví dụ phân số: $\\frac{5}{7}$, hỗn số: $2\\frac{1}{3}$. Số mũ/chỉ số dưới LUÔN đặt trong ngoặc nhọn, ví dụ $2hm^{2}\\ 15m^{2}$, $x^{10}$ (không viết hm^215m^2).
             - Tiêu đề lớn dùng #, ##; chữ in đậm dùng **...**; giữ nguyên các nhãn như "Bài 1:", "a)", "b)".
-            - Bảng thì dùng bảng Markdown.
+            - Bảng (có kẻ ô) viết bằng HTML: <table><tr><td>...</td></tr></table>, KHÔNG dùng bảng Markdown. Chép đúng số hàng, số cột như trong ảnh; ô gộp nhiều cột dùng colspan, ô gộp nhiều hàng dùng rowspan (không thêm ô trống thay cho ô gộp); trong một ô có nhiều dòng thì ngăn cách bằng <br>; công thức trong ô vẫn viết $...$.
+            - Mỗi dòng trên trang là một dòng riêng trong Markdown (dòng chữ dài bị ngắt do hết khổ giấy thì nối lại thành một dòng).
+            - Dòng được căn GIỮA trang (tiêu đề giữa trang, dòng chữ/công thức đứng giữa): thêm [[GIUA]] vào đầu nội dung dòng (sau các dấu # nếu là tiêu đề). Ví dụ: ## [[GIUA]]BÀI 8: ĐẾM SỐ CÁC PHÂN SỐ
+            - Nhiều mục xếp thành cột trên CÙNG một hàng của trang (ví dụ "a) ...   b) ..." hoặc "a) ... b) ... c) ... d) ..."): viết trên CÙNG một dòng, ngăn cách các mục bằng [[TAB]]. Không tách mỗi mục ra một dòng.
+            - Ô vuông trống để điền (□): viết [[O]], kể cả khi nằm giữa hai biểu thức toán, ví dụ: $\\frac{1}{2}$ [[O]] $\\frac{3}{4}$.
             - BỎ HẲN phần header và footer của trang (dòng tên đơn vị/website/hotline/số điện thoại ở đầu trang, dòng quảng cáo và số trang ở cuối trang, logo). Không chép các dòng đó.
-            - Hình vẽ: ghi [Hình: mô tả ngắn một dòng].
+            - Hình vẽ (hình học, sơ đồ, đoạn thẳng, hình minh họa, biểu đồ...), KỂ CẢ sơ đồ vẽ bằng ký tự hoặc có chữ màu/ngoặc/mũi tên (ví dụ sơ đồ đoạn thẳng "Tử số: |=====|===|", sơ đồ tóm tắt có ngoặc nhọn và nhãn): KHÔNG mô tả hay chép lại bằng chữ, mà đặt đúng tại vị trí của hình một dòng riêng dạng [[HINH: ymin, xmin, ymax, xmax]] — là khung bao quanh TOÀN BỘ hình kể cả các chữ cái/nhãn/số đo ghi trên hình, tọa độ chuẩn hóa 0-1000 theo kích thước ảnh trang. Các hình con đứng sát nhau (ví dụ hình a, b, c cạnh nhau) thì gộp chung một khung. Chữ, nhãn nằm trong khung hình thì KHÔNG chép lại ra ngoài.
             - Chỉ trả về Markdown, không bọc trong ```, không dùng đường kẻ ngang ---.
             """;
 
     private static final int MAX_ATTEMPTS = 6;
+
+    /** Marker Gemini đặt tại vị trí hình vẽ: [[HINH: ymin, xmin, ymax, xmax]] (chuẩn hoá 0-1000). */
+    private static final Pattern FIGURE_MARKER = Pattern.compile(
+            "\\[\\[\\s*HINH\\s*:\\s*(\\d+(?:\\.\\d+)?)\\s*,\\s*(\\d+(?:\\.\\d+)?)\\s*,\\s*(\\d+(?:\\.\\d+)?)\\s*,\\s*(\\d+(?:\\.\\d+)?)\\s*]]");
+
+    /** Nới khung hình thêm một chút (theo thang 0-1000) để không cắt mất nét/nhãn sát mép. */
+    private static final int FIGURE_PADDING = 4;
 
     @Value("${ocr.gemini.model:gemini-3.8-flash}")
     private String model;
@@ -100,10 +114,68 @@ public class GeminiOcrService {
                 BufferedImage image = renderer.renderImageWithDPI(i, dpi, ImageType.RGB);
                 ByteArrayOutputStream png = new ByteArrayOutputStream();
                 ImageIO.write(image, "png", png);
-                pages.add(callGemini(png.toByteArray()).strip());
+                pages.add(embedFigures(callGemini(png.toByteArray()).strip(), image));
             }
         }
         return String.join("\n\n", pages);
+    }
+
+    /**
+     * Thay mỗi marker [[HINH: ...]] bằng ảnh cắt từ ảnh trang, nhúng thẳng vào Markdown (data URI)
+     * để kết quả OCR lưu trong DB tự đủ, tạo lại file Word lúc nào cũng được.
+     */
+    private String embedFigures(String markdown, BufferedImage page) {
+        Matcher m = FIGURE_MARKER.matcher(markdown);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            String replacement;
+            try {
+                replacement = "\n\n" + cropFigure(page,
+                        Double.parseDouble(m.group(1)), Double.parseDouble(m.group(2)),
+                        Double.parseDouble(m.group(3)), Double.parseDouble(m.group(4))) + "\n\n";
+            } catch (Exception e) {
+                log.warn("Cannot crop figure {}: {}", m.group(), e.toString());
+                replacement = "";
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    private String cropFigure(BufferedImage page, double ymin, double xmin, double ymax, double xmax) throws IOException {
+        int w = page.getWidth();
+        int h = page.getHeight();
+        int x0 = clamp((int) Math.floor((Math.min(xmin, xmax) - FIGURE_PADDING) * w / 1000), 0, w - 1);
+        int y0 = clamp((int) Math.floor((Math.min(ymin, ymax) - FIGURE_PADDING) * h / 1000), 0, h - 1);
+        int x1 = clamp((int) Math.ceil((Math.max(xmin, xmax) + FIGURE_PADDING) * w / 1000), x0 + 1, w);
+        int y1 = clamp((int) Math.ceil((Math.max(ymin, ymax) + FIGURE_PADDING) * h / 1000), y0 + 1, h);
+
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(page.getSubimage(x0, y0, x1 - x0, y1 - y0), "png", png);
+
+        // Giữ đúng kích thước in như trên trang gốc (pandoc mặc định coi ảnh là 96 dpi)
+        double widthCm = (x1 - x0) * 2.54 / dpi;
+        String image = String.format(Locale.ROOT, "![](data:image/png;base64,%s){width=%.2fcm}",
+                Base64.getEncoder().encodeToString(png.toByteArray()), widthCm);
+
+        // Căn lề theo vị trí hình trên trang gốc; style này được WordGeneratorService gán căn lề trong Word
+        String style = figureStyle((double) x0 / w, 1 - (double) x1 / w);
+        return style == null ? image : ":::: {custom-style=\"" + style + "\"}\n" + image + "\n::::";
+    }
+
+    /** Hai khoảng trống trái/phải chênh nhau không quá ngưỡng này (tỉ lệ bề rộng trang) thì coi là hình căn giữa. */
+    private static final double CENTER_TOLERANCE = 0.06;
+
+    private static String figureStyle(double leftGap, double rightGap) {
+        if (Math.abs(leftGap - rightGap) <= CENTER_TOLERANCE) {
+            return WordGeneratorService.FIGURE_CENTER_STYLE;
+        }
+        return rightGap < leftGap ? WordGeneratorService.FIGURE_RIGHT_STYLE : null;
+    }
+
+    private static int clamp(int v, int min, int max) {
+        return Math.max(min, Math.min(max, v));
     }
 
     private String callGemini(byte[] pngBytes) throws IOException, InterruptedException {

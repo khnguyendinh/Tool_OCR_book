@@ -16,6 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -23,6 +26,10 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class WordGeneratorService {
+
+    /** Style đoạn (custom-style của pandoc) bọc hình cần căn giữa / căn phải. */
+    public static final String FIGURE_CENTER_STYLE = "Figure Center";
+    public static final String FIGURE_RIGHT_STYLE = "Figure Right";
 
     @Value("${ocr.output-dir:./output}")
     private String outputDir;
@@ -101,15 +108,18 @@ public class WordGeneratorService {
         String markdown = markdownParts.stream()
                 .filter(p -> p != null && !p.isBlank())
                 .collect(Collectors.joining("\n\n"));
+        markdown = BookMarkdown.prepare(markdown, this::htmlTableToGridTable);
 
         Path mdFile = Files.createTempFile("ocr-", ".md");
         Path pandocLog = Files.createTempFile("pandoc-", ".log");
+        // pandoc ghi ra file tạm (tên ASCII) rồi mới chuyển vào output, để file đích đang mở trong Word không làm hỏng lần tạo
+        Path docxTemp = Files.createTempFile("ocr-", ".docx");
         try {
             Files.writeString(mdFile, markdown, StandardCharsets.UTF_8);
 
             // -fancy_lists: giữ nguyên nhãn "a)", "b)"... là chữ, không biến thành danh sách tự đánh số
             Process process = new ProcessBuilder(resolvePandoc(), mdFile.toString(),
-                    "-f", "markdown-fancy_lists", "-o", filePath.toString())
+                    "-f", "markdown-fancy_lists", "-o", docxTemp.toString())
                     .redirectErrorStream(true)
                     .redirectOutput(pandocLog.toFile())
                     .start();
@@ -121,16 +131,74 @@ public class WordGeneratorService {
                 throw new IOException("pandoc exit " + process.exitValue() + ": "
                         + Files.readString(pandocLog, StandardCharsets.UTF_8).strip());
             }
+            DocxLayout.apply(docxTemp);
+            filePath = moveIntoPlace(docxTemp, filePath);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("pandoc interrupted", e);
         } finally {
             Files.deleteIfExists(mdFile);
             Files.deleteIfExists(pandocLog);
+            Files.deleteIfExists(docxTemp);
         }
 
         log.info("Generated Word document via pandoc: {}", filePath);
         return filePath.toString();
+    }
+
+    /**
+     * Chuyển file vừa tạo vào vị trí đích. Nếu file đích đang bị khoá (thường do đang mở trong Word)
+     * thì lưu sang tên mới có thêm thời điểm tạo.
+     */
+    private Path moveIntoPlace(Path source, Path target) throws IOException {
+        try {
+            return Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            String stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+            Path alt = target.resolveSibling(target.getFileName().toString().replaceAll("\\.docx$", "_" + stamp + ".docx"));
+            log.warn("Cannot replace {} ({}), saving as {}", target, e.toString(), alt.getFileName());
+            return Files.move(source, alt);
+        }
+    }
+
+    /**
+     * Bảng HTML (rowspan/colspan, &lt;br&gt; trong ô, công thức $...$) → grid table Markdown, loại bảng duy nhất của pandoc
+     * giữ được ô gộp khi xuất Word. Lỗi thì trả lại HTML gốc để không mất nội dung.
+     */
+    private String htmlTableToGridTable(String html) {
+        Path in = null;
+        Path out = null;
+        try {
+            in = Files.createTempFile("table-", ".html");
+            out = Files.createTempFile("table-", ".md");
+            Files.writeString(in, html, StandardCharsets.UTF_8);
+            Process process = new ProcessBuilder(resolvePandoc(), in.toString(),
+                    "-f", "html+tex_math_dollars",
+                    "-t", "markdown-simple_tables-multiline_tables-pipe_tables",
+                    "--columns=400", "-o", out.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            if (!process.waitFor(1, TimeUnit.MINUTES) || process.exitValue() != 0) {
+                process.destroyForcibly();
+                log.warn("pandoc cannot convert HTML table, keeping it as-is");
+                return html;
+            }
+            return Files.readString(out, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.warn("Cannot convert HTML table: {}", e.toString());
+            return html;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return html;
+        } finally {
+            try {
+                if (in != null) Files.deleteIfExists(in);
+                if (out != null) Files.deleteIfExists(out);
+            } catch (IOException ignored) {
+                // file tạm, không quan trọng
+            }
+        }
     }
 
     /** Lấy đường dẫn pandoc: cấu hình → nơi winget cài mặc định → PATH. */

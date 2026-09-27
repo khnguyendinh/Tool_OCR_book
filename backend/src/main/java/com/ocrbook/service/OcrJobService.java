@@ -6,6 +6,7 @@ import com.ocrbook.model.OcrJob;
 import com.ocrbook.model.OcrTask;
 import com.ocrbook.repository.OcrJobRepository;
 import com.ocrbook.repository.OcrTaskRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,8 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,6 +43,41 @@ public class OcrJobService {
 
     @Value("${ocr.output-dir:./output}")
     private String defaultOutputDir;
+
+    /** Cấu hình người dùng đổi trên giao diện, lưu ra file để không mất khi restart backend. */
+    private static final Path SETTINGS_FILE = Path.of("./data/ocr-settings.properties");
+
+    @PostConstruct
+    void loadSettings() {
+        if (!Files.exists(SETTINGS_FILE)) {
+            return;
+        }
+        Properties props = new Properties();
+        try (var reader = Files.newBufferedReader(SETTINGS_FILE, StandardCharsets.UTF_8)) {
+            props.load(reader);
+            defaultSplitParts = Integer.parseInt(props.getProperty("splitParts", String.valueOf(defaultSplitParts)));
+            defaultSplitDir = props.getProperty("splitDir", defaultSplitDir);
+            defaultOutputDir = props.getProperty("outputDir", defaultOutputDir);
+            log.info("Loaded settings: splitParts={}, splitDir={}, outputDir={}", defaultSplitParts, defaultSplitDir, defaultOutputDir);
+        } catch (IOException | NumberFormatException e) {
+            log.warn("Cannot read {}: {}", SETTINGS_FILE, e.toString());
+        }
+    }
+
+    private void saveSettings() {
+        Properties props = new Properties();
+        props.setProperty("splitParts", String.valueOf(defaultSplitParts));
+        props.setProperty("splitDir", defaultSplitDir);
+        props.setProperty("outputDir", defaultOutputDir);
+        try {
+            Files.createDirectories(SETTINGS_FILE.getParent());
+            try (var writer = Files.newBufferedWriter(SETTINGS_FILE, StandardCharsets.UTF_8)) {
+                props.store(writer, "OCR Book settings");
+            }
+        } catch (IOException e) {
+            log.warn("Cannot save {}: {}", SETTINGS_FILE, e.toString());
+        }
+    }
 
     /**
      * Start a new OCR job: upload PDF → split → queue tasks.
@@ -230,11 +270,8 @@ public class OcrJobService {
         if (job.getStatus() != OcrJob.JobStatus.COMPLETED) {
             throw new IllegalStateException("Job is not completed yet");
         }
-        String outputFilePath = job.getOutputFilePath();
-        if (outputFilePath == null || !java.nio.file.Files.exists(java.nio.file.Path.of(outputFilePath))) {
-            // Lần tạo file Word trước bị lỗi hoặc file đã bị xoá → tạo lại từ kết quả OCR đã lưu
-            outputFilePath = generateOutput(jobId);
-        }
+        // Luôn tạo lại từ kết quả OCR đã lưu (không gọi lại OCR) để file Word theo đúng cách xuất mới nhất
+        String outputFilePath = generateOutput(jobId);
         return java.nio.file.Files.readAllBytes(java.nio.file.Path.of(outputFilePath));
     }
 
@@ -247,6 +284,7 @@ public class OcrJobService {
 
     public void setDefaultSplitParts(int parts) {
         this.defaultSplitParts = parts;
+        saveSettings();
     }
 
     public String getDefaultSplitDir() {
@@ -255,6 +293,7 @@ public class OcrJobService {
 
     public void setDefaultSplitDir(String dir) {
         this.defaultSplitDir = dir;
+        saveSettings();
     }
 
     public String getDefaultOutputDir() {
@@ -263,5 +302,6 @@ public class OcrJobService {
 
     public void setDefaultOutputDir(String dir) {
         this.defaultOutputDir = dir;
+        saveSettings();
     }
 }

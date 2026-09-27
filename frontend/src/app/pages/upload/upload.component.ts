@@ -123,6 +123,9 @@ export class UploadComponent implements OnInit {
         this.currentIndex = 0;
         this.failedFiles = [];
         this.createdJobIds = [];
+        // Lưu cấu hình đang nhập làm mặc định cho lần sau (backend ghi ra file, không mất khi restart)
+        this.ocrService.updateConfig({ splitParts: this.numParts, splitDir: this.splitDir, outputDir: this.outputDir })
+            .subscribe({ error: (err) => console.warn('Không lưu được cấu hình:', err) });
         this.uploadNext();
     }
 
