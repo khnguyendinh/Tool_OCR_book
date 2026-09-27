@@ -43,6 +43,7 @@ export class JobDetailComponent implements OnInit, OnDestroy {
         this.ocrService.getJob(this.jobId).subscribe({
             next: (job) => {
                 this.job = job;
+                this.error = '';  // server kết nối lại được (vd: sau khi restart) → bỏ thông báo lỗi cũ
                 this.isLoading = false;
             },
             error: (err) => {

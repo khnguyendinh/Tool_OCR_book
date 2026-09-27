@@ -13,6 +13,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -124,6 +126,7 @@ public class OcrJobService {
 
             // Create tasks and queue messages
             OcrJob job = jobRepository.findById(jobId).orElseThrow();
+            List<OcrTaskMessage> messages = new java.util.ArrayList<>();
 
             for (PdfSplitterService.SplitResult result : splitResults) {
                 OcrTask task = OcrTask.builder()
@@ -136,11 +139,10 @@ public class OcrJobService {
                         .build();
                 task = taskRepository.save(task);
 
-                // Send message to queue
-                OcrTaskMessage message = new OcrTaskMessage(
-                        jobId, task.getId(), result.partNumber(), result.filePath(), job.getEffectiveOcrMode());
-                ocrTaskProducer.sendOcrTask(message);
+                messages.add(new OcrTaskMessage(
+                        jobId, task.getId(), result.partNumber(), result.filePath(), job.getEffectiveOcrMode()));
             }
+            sendAfterCommit(messages);
 
             // Update job status
             job.setStatus(OcrJob.JobStatus.QUEUED);
@@ -163,7 +165,11 @@ public class OcrJobService {
      */
     @Transactional
     public void completeTask(String taskId, String extractedText) {
-        OcrTask task = taskRepository.findById(taskId).orElseThrow();
+        OcrTask task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            log.info("Task {} no longer exists (job deleted), dropping result", taskId);
+            return;
+        }
 
         // Khoá dòng job để các consumer chạy song song cập nhật tiến độ lần lượt;
         // nếu không, nhiều task xong cùng lúc sẽ đếm thiếu và job kẹt ở PROCESSING
@@ -201,7 +207,10 @@ public class OcrJobService {
      */
     @Transactional
     public void failTask(String taskId, String errorMessage) {
-        OcrTask task = taskRepository.findById(taskId).orElseThrow();
+        OcrTask task = taskRepository.findById(taskId).orElse(null);
+        if (task == null) {
+            return;
+        }
         task.setStatus(OcrTask.TaskStatus.FAILED);
         task.setErrorMessage(errorMessage);
         taskRepository.save(task);
@@ -250,6 +259,72 @@ public class OcrJobService {
      */
     public List<OcrJob> getAllJobs() {
         return jobRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /**
+     * Xoá lịch sử job. Luôn xoá job đã xong/lỗi; job chưa xong (đang chờ, đang chạy, treo) chỉ xoá khi
+     * includeActive = true (giao diện đã hỏi người dùng). File Word đã xuất không bị xoá, chỉ dọn PDF tạm.
+     *
+     * @return số job đã xoá
+     */
+    @Transactional
+    public int clearHistory(boolean includeActive) {
+        List<OcrJob> removable = jobRepository.findAll().stream()
+                .filter(job -> includeActive
+                        || job.getStatus() == OcrJob.JobStatus.COMPLETED
+                        || job.getStatus() == OcrJob.JobStatus.FAILED)
+                .toList();
+        jobRepository.deleteAll(removable);
+        removable.forEach(job -> pdfSplitterService.cleanup(job.getId()));
+        log.info("Cleared {} jobs from history (includeActive={})", removable.size(), includeActive);
+        return removable.size();
+    }
+
+    /** Task còn tồn tại không (job có thể đã bị xoá khỏi lịch sử khi trang của nó vẫn nằm trong hàng đợi). */
+    public boolean taskExists(String taskId) {
+        return taskRepository.existsById(taskId);
+    }
+
+    /**
+     * Gửi message vào hàng đợi SAU KHI transaction lưu job/task đã commit. Gửi sớm hơn thì consumer
+     * nhận được trang nhưng chưa thấy bản ghi trong DB, tưởng job đã bị xoá và bỏ qua trang đó.
+     */
+    private void sendAfterCommit(List<OcrTaskMessage> messages) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    messages.forEach(ocrTaskProducer::sendOcrTask);
+                }
+            });
+        } else {
+            messages.forEach(ocrTaskProducer::sendOcrTask);
+        }
+    }
+
+    /**
+     * Đẩy lại vào hàng đợi các trang chưa xong (PENDING/FAILED) của một job bị kẹt, không OCR lại trang đã xong.
+     *
+     * @return số trang đã đẩy lại
+     */
+    @Transactional
+    public int resumeJob(String jobId) {
+        OcrJob job = jobRepository.findById(jobId).orElseThrow();
+        List<OcrTaskMessage> messages = taskRepository.findByJobIdOrderByPartNumberAsc(jobId).stream()
+                .filter(t -> t.getStatus() != OcrTask.TaskStatus.COMPLETED)
+                .map(t -> {
+                    t.setStatus(OcrTask.TaskStatus.PENDING);
+                    t.setErrorMessage(null);
+                    return new OcrTaskMessage(jobId, t.getId(), t.getPartNumber(), t.getPdfPartPath(),
+                            job.getEffectiveOcrMode());
+                })
+                .toList();
+        if (!messages.isEmpty() && job.getStatus() != OcrJob.JobStatus.PROCESSING) {
+            job.setStatus(OcrJob.JobStatus.QUEUED);
+        }
+        sendAfterCommit(messages);
+        log.info("Resumed job {}: re-queued {} parts", jobId, messages.size());
+        return messages.size();
     }
 
     /**

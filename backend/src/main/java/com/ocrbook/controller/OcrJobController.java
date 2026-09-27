@@ -65,6 +65,23 @@ public class OcrJobController {
     }
 
     /**
+     * Xoá lịch sử job, trả về số job đã xoá. includeActive=true thì xoá cả job chưa xong.
+     */
+    @DeleteMapping("/jobs")
+    public ResponseEntity<java.util.Map<String, Integer>> clearHistory(
+            @RequestParam(value = "includeActive", defaultValue = "false") boolean includeActive) {
+        return ResponseEntity.ok(java.util.Map.of("deleted", ocrJobService.clearHistory(includeActive)));
+    }
+
+    /**
+     * Chạy tiếp job bị kẹt: đẩy lại các trang chưa xong vào hàng đợi.
+     */
+    @PostMapping("/jobs/{id}/resume")
+    public ResponseEntity<java.util.Map<String, Integer>> resumeJob(@PathVariable String id) {
+        return ResponseEntity.ok(java.util.Map.of("requeued", ocrJobService.resumeJob(id)));
+    }
+
+    /**
      * Get details of a specific job.
      */
     @GetMapping("/jobs/{id}")

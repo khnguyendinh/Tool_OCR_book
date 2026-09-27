@@ -28,6 +28,12 @@ public class OcrTaskConsumer {
         log.info("Received OCR task: jobId={}, taskId={}, part={}",
                 message.getJobId(), message.getTaskId(), message.getPartNumber());
 
+        // Job đã bị xoá khỏi lịch sử → bỏ qua, không gọi OCR (tránh tốn phí Gemini)
+        if (!ocrJobService.taskExists(message.getTaskId())) {
+            log.info("Skipping task {} of deleted job {}", message.getTaskId(), message.getJobId());
+            return;
+        }
+
         try {
             long startTime = System.currentTimeMillis();
 

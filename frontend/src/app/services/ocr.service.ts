@@ -67,6 +67,13 @@ export class OcrService {
         return this.http.get<OcrJob[]>(`${this.apiUrl}/jobs`);
     }
 
+    /** Xoá lịch sử job; includeActive = true thì xoá cả job chưa xong (đang chờ/đang chạy/treo). */
+    clearHistory(includeActive: boolean): Observable<{ deleted: number }> {
+        return this.http.delete<{ deleted: number }>(`${this.apiUrl}/jobs`, {
+            params: { includeActive: String(includeActive) }
+        });
+    }
+
     getJob(id: string): Observable<OcrJob> {
         return this.http.get<OcrJob>(`${this.apiUrl}/jobs/${id}`);
     }
